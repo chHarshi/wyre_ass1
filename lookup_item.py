@@ -88,7 +88,7 @@ def main():
 
                 item_tag = safe_name(bid_name)[:40]
 
-                for i, reg in enumerate(item["regions"][:5]):
+                for i, reg in enumerate(item["regions"]):
                     q = reg["quad_px"]
                     xs, ys = q[0::2], q[1::2]
                     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)

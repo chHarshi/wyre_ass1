@@ -35,7 +35,40 @@ spreadsheet.
   cases resolved by a human reading the sheet directly (documented
   inline with the reasoning for each).
 - `build_outputs.py` — removes WRONG items from a copy of `results.json`
-  (packages that become empty are dropped) and exports `findings.csv`.
+  (packages that become empty are dropped) and exports `findings.csv`
+  (including a `quad_px_boxes` column, populated only for WRONG /
+  NEEDS_REVIEW items, so a reviewer can jump straight to the exact
+  coordinates that need a second look without re-deriving them).
+- `lookup_item.py` — a standalone helper for spot-checking any single
+  item by hand. Give it a sheet number and part of a bid item's name; it
+  finds that item in `results.json`, crops a zoomed-in image of each of
+  its regions straight from the real PDF, and saves them into an
+  `output/` folder with clear filenames (sheet + page + region number).
+  If `findings_raw.json` exists in the same folder, it also prints that
+  item's prior verdict + reason, so you see the visual evidence and your
+  own past conclusion side by side. Usage:
+  ```bash
+  python3 lookup_item.py "<sheet_number>" "<bid_item name or fragment>"
+  # e.g.
+  python3 lookup_item.py "A-153E" "Corner Guards"
+  ```
+  This doesn't require a full exact match - any distinctive substring of
+  the bid item name works.
+
+## Additional checks worth knowing about
+
+- **Disclaimer-zone detection** (`legend_parser.find_disclaimer_zones`) —
+  some sheets carry a "reference only / previously submitted with an
+  earlier bid package" callout (usually a drawn red box) that means the
+  scope inside it may already be covered elsewhere. `audit.py` locates
+  these boxes via the page's own vector drawings (not a guessed padding
+  area) and flags (not auto-fails) any bid item whose region overlaps
+  one, appending a note to that effect rather than silently ignoring it.
+- A small hard-coded rule catches one project-specific abbreviation
+  collision: the symbol "EM" means Electrical Manhole on the civil
+  sheets, but was mis-matched to an "Emergency System Components" item
+  on one sheet. This is a specific fact about this project's plans, not
+  a generalizable rule - worth re-checking on a new sheet set.
 
 ## Running on a new set of sheets (e.g. the second, unseen set)
 

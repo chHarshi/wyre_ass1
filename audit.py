@@ -24,7 +24,7 @@ from legend_parser import (
     WALL_TAGS, ROOF_TAGS, CEILING_TAGS, FLOOR_TAGS,
     is_grid_bubble_text, is_dimension_string, is_title_block_text,
     is_bare_room_label, finish_code_keywords, site_code_keywords,
-    has_botanical_name,
+    has_botanical_name, find_disclaimer_zones, region_overlaps_zone,
 )
 
 REFERENCE_SHEETS = {"G-002.3", "G-501", "G-511"}
@@ -295,6 +295,7 @@ def main():
         pindex = page_index[page_num - 1]
         is_reference = sheet_number in REFERENCE_SHEETS
         img_rects = [page.get_image_bbox(img) for img in page.get_images(full=True)] if page.get_images() else []
+        disclaimer_zones = find_disclaimer_zones(page)
 
         def overlaps_image(quad_px):
             rx0, ry0, rx1, ry1 = quad_px[0], quad_px[1], quad_px[4], quad_px[5]
@@ -339,10 +340,36 @@ def main():
                 else:
                     verdict, reason = classify_item(sheet_number, pkg, item, region_texts)
 
+                # Flag (don't auto-fail) any item whose evidence sits inside a
+                # "reference only / previously submitted with [an earlier
+                # package]" disclaimer box - the text may be perfectly real,
+                # but the scope it represents may already be covered under a
+                # prior bid package rather than being new work for this one.
+                if disclaimer_zones and verdict == "RIGHT":
+                    for reg in item.get("regions", []):
+                        if any(region_overlaps_zone(reg["quad_px"], z) for z in disclaimer_zones):
+                            verdict = "NEEDS_REVIEW"
+                            reason = (
+                                reason + " [FLAGGED: this item's evidence region overlaps a "
+                                "'reference only / previously submitted' disclaimer box on this "
+                                "sheet - the text may be real, but this scope might already be "
+                                "covered under an earlier bid package rather than being new work "
+                                "for this one. Verify with the project team before pricing.]"
+                            )
+                            break
+
                 override = MANUAL_OVERRIDES.get((sheet_number, pkg, item.get("bid_item", "")))
                 if override:
                     verdict, reason = override
                     reason = "[Manual review] " + reason
+
+                # For items a reviewer needs to go check by eye (WRONG or
+                # NEEDS_REVIEW), record the exact quad_px boxes so they can be
+                # pointed at directly in the PDF without re-deriving them -
+                # kept empty for RIGHT items to keep the file lean.
+                quad_boxes = []
+                if verdict in ("WRONG", "NEEDS_REVIEW"):
+                    quad_boxes = [r["quad_px"] for r in item.get("regions", [])]
 
                 findings.append({
                     "sheet_number": sheet_number,
@@ -359,6 +386,7 @@ def main():
                     )[:400],
                     "verdict": verdict,
                     "reason": reason,
+                    "quad_px_boxes": quad_boxes,
                 })
 
                 if verdict == "WRONG":

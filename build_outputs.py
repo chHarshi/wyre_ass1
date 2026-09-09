@@ -54,13 +54,19 @@ print(f"Removed {len(removed_log)} WRONG items from corrected JSON "
 fieldnames = [
     "sheet_number", "sheet_name", "discipline", "page_number",
     "scope_package", "bid_item", "subheading", "n_regions", "verdict",
-    "reason", "extracted_text_sample", "json_text_sample",
+    "reason", "extracted_text_sample", "json_text_sample", "quad_px_boxes",
 ]
 with open("findings.csv", "w", newline="", encoding="utf-8-sig") as f:
     w = csv.DictWriter(f, fieldnames=fieldnames)
     w.writeheader()
     for row in findings:
-        w.writerow({k: row.get(k, "") for k in fieldnames})
+        r = dict(row)
+        # flatten the list-of-lists into a compact string that still opens
+        # cleanly in Excel/CSV (one region's box per semicolon-separated group)
+        boxes = r.get("quad_px_boxes") or []
+        r["quad_px_boxes"] = "; ".join(
+            ",".join(f"{n:.0f}" for n in box) for box in boxes
+        )
+        w.writerow({k: r.get(k, "") for k in fieldnames})
 
 print(f"Wrote findings.csv with {len(findings)} rows.")
-

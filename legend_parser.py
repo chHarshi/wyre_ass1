@@ -9,6 +9,7 @@ G-501 / G-511 (visible directly in the sheet text) and records the tag plus
 a rough material category based on nearby keywords.
 """
 import re
+import fitz
 
 WALL_TAGS = {
     # tag -> (category, note)
@@ -126,11 +127,66 @@ ROOM_NAME_WORDS = {
 }
 
 
-_ALL_TAG_KEYS = set(WALL_TAGS) | set(ROOF_TAGS) | set(CEILING_TAGS) | set(FLOOR_TAGS)
+DISCLAIMER_PHRASES = [
+    "REFERENCE ONLY",
+    "PREVIOUSLY SUBMITTED",
+    "FOR REFERENCE ONLY",
+]
+
+
+def find_disclaimer_zones(page):
+    """Find drawn boxes (usually red-outlined) on the page that contain a
+    'reference only / previously submitted' style disclaimer, and return
+    their bounding rects in 'as viewed' (rotated) coordinates. A bid item
+    whose region overlaps one of these is potentially not new scope for
+    this bid package - it's flagged for review, not auto-marked wrong,
+    since the disclaimer affects scope/phasing, not whether the text
+    itself supports the item."""
+    words = page.get_text("words")
+    m = page.rotation_matrix if page.rotation else fitz.Matrix(1, 0, 0, 1, 0, 0)
+
+    def to_viewed(x, y):
+        if page.rotation:
+            p = fitz.Point(x, y) * m
+            return p.x, p.y
+        return x, y
+
+    # locate any disclaimer phrase by scanning consecutive words
+    full_text = page.get_text("text")
+    if not any(phrase in full_text.upper() for phrase in DISCLAIMER_PHRASES):
+        return []
+
+    hit_words = [w for w in words if w[4].upper() in ("REFERENCE", "PREVIOUSLY", "ONLY")]
+    if not hit_words:
+        return []
+
+    # use any drawn rectangle (commonly a red callout box) that encloses a hit word
+    zones = []
+    drawings = page.get_drawings()
+    for w in hit_words:
+        wx0, wy0, wx1, wy1 = w[0], w[1], w[2], w[3]
+        for d in drawings:
+            r = d.get("rect")
+            if not r:
+                continue
+            if r.x0 <= wx0 and r.x1 >= wx1 and r.y0 <= wy0 and r.y1 >= wy1 and r.width < 800 and r.height < 800:
+                x0, y0 = to_viewed(r.x0, r.y0)
+                x1, y1 = to_viewed(r.x1, r.y1)
+                zones.append((min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)))
+    return zones
+
+
+def region_overlaps_zone(quad_px, zone):
+    xs, ys = quad_px[0::2], quad_px[1::2]
+    rx0, rx1 = min(xs), max(xs)
+    ry0, ry1 = min(ys), max(ys)
+    zx0, zy0, zx1, zy1 = zone
+    return rx0 < zx1 and rx1 > zx0 and ry0 < zy1 and ry1 > zy0
 
 # Short 1-2 letter civil/site-utility symbols that would otherwise look like
 # grid bubbles but are legitimate plan symbols (see SITE_CODE_KEYWORDS above).
 _SITE_SYMBOL_TOKENS = {"FH", "PB", "FO", "IRR", "SS", "SD", "EM", "ADS", "CIB", "SDMH", "DS", "G"}
+_ALL_TAG_KEYS = set(WALL_TAGS) | set(ROOF_TAGS) | set(CEILING_TAGS) | set(FLOOR_TAGS)
 _EXCLUDED_FROM_GRID = _ALL_TAG_KEYS | _SITE_SYMBOL_TOKENS
 
 
